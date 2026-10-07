@@ -1,0 +1,10 @@
+{
+  "appId": "com.buddy.todoalarm",
+  "appName": "To-Do Alarm",
+  "webDir": "www",
+  "plugins": {
+    "LocalNotifications": {
+      "sound": "alarm.wav"
+    }
+  }
+}
