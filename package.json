@@ -1,9 +1,10 @@
 {
   "name": "todo-alarm",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "To-do list with date, time and alarm",
   "dependencies": {
+    "@capacitor-community/admob": "6.2.0",
     "@capacitor/android": "^6.2.0",
     "@capacitor/core": "^6.2.0",
     "@capacitor/local-notifications": "^6.1.0"

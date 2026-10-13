@@ -86,6 +86,10 @@ input[type=text],input[type=date],input[type=time]{width:100%;background:var(--b
 .ring p{margin:0;color:var(--muted)}
 .ring .what{font-size:26px;font-weight:800;margin:6px 0 18px;word-break:break-word;color:var(--ink)}
 .ring .btn{display:block;width:100%;margin-top:8px}
+/* banner ad sits at the very bottom (50dp tall): lift everything above it so nothing is covered */
+body.ad .app{padding-bottom:170px}
+body.ad .add{bottom:50px}
+body.ad .veil:not(.ring){padding-bottom:50px}
 @media (prefers-reduced-motion:no-preference){
   .ring.open .sheet{animation:nudge .5s ease-in-out 6}
   @keyframes nudge{0%,100%{transform:rotate(0)}25%{transform:rotate(-1.2deg)}75%{transform:rotate(1.2deg)}}
@@ -184,6 +188,44 @@ function cancelNative(t){
   return LN('cancel',{notifications:[{id:t.nid}]}).catch(function(){});
 }
 
+/* ---------- ads (Google AdMob) ----------
+   ADS_TEST=true shows Google's sample ads only — safe for testing, earns nothing.
+   Change to false ONLY for the Play Store release build. Never tap your own real ads. */
+var ADS_TEST=true;
+var AD_BANNER='ca-app-pub-1108774748467505/8402753059';
+var AD_INTERSTITIAL='ca-app-pub-1108774748467505/5132310628';
+var INTERSTITIAL_EVERY=3;            // full-screen ad after every 3rd new task saved
+function AD(method,opts){return cap.nativePromise('AdMob',method,opts||{})}
+var adsOn=false,bannerUp=false,interReady=false,savesSinceAd=0;
+function startAds(){
+  if(!isNative)return;
+  AD('initialize',{initializeForTesting:ADS_TEST})
+    .then(function(){return AD('requestConsentInfo',{}).then(function(c){
+      if(c&&c.status==='REQUIRED'&&c.isConsentFormAvailable)return AD('showConsentForm',{});
+    }).catch(function(){})})
+    .then(function(){adsOn=true;showBanner();prepInter()})
+    .catch(function(){});
+}
+function showBanner(){
+  if(!adsOn||ringing)return;
+  AD('showBanner',{adId:AD_BANNER,adSize:'BANNER',position:'BOTTOM_CENTER',margin:0,isTesting:ADS_TEST})
+    .then(function(){bannerUp=true;document.body.classList.add('ad')}).catch(function(){});
+}
+function hideBannerForAlarm(){if(bannerUp)AD('hideBanner').catch(function(){})}
+function bringBannerBack(){if(bannerUp)AD('resumeBanner').catch(function(){})}
+function prepInter(){
+  if(!adsOn||interReady)return;
+  AD('prepareInterstitial',{adId:AD_INTERSTITIAL,isTesting:ADS_TEST})
+    .then(function(){interReady=true}).catch(function(){interReady=false});
+}
+function afterNewTaskSaved(){
+  if(!adsOn)return;
+  savesSinceAd++;
+  if(savesSinceAd<INTERSTITIAL_EVERY||!interReady||ringing)return;
+  savesSinceAd=0;interReady=false;
+  AD('showInterstitial').catch(function(){}).then(function(){setTimeout(prepInter,1000)});
+}
+
 /* ---------- alarm sound while the app is open in a browser ---------- */
 var actx=null,beepTimer=null;
 function unlockAudio(){try{if(!actx){var C=window.AudioContext||window.webkitAudioContext;if(C)actx=new C()}
@@ -273,9 +315,10 @@ function ring(t){
   ringing=t;var d=new Date(t.due),tt=time12(d);
   $('ringWhen').textContent='It is '+tt.t+' '+tt.s+'. Time to do this:';
   $('ringWhat').textContent=t.title;
+  hideBannerForAlarm();
   $('ringVeil').classList.add('open');startSound();$('ringDone').focus();
 }
-function closeRing(){stopSound();$('ringVeil').classList.remove('open');ringing=null}
+function closeRing(){stopSound();$('ringVeil').classList.remove('open');ringing=null;bringBannerBack()}
 $('ringStop').onclick=closeRing;
 $('ringDone').onclick=function(){var t=ringing;closeRing();if(t)setDone(t,true)};
 $('ringSnooze').onclick=function(){
@@ -308,10 +351,11 @@ $('fSave').onclick=function(){
   if(isNaN(due)){$('fErr').textContent='That date or time is not valid.';return}
   var alarm=$('fAlarm').checked;
   if(alarm&&due<=Date.now()&&!(editing&&editing.due===due)){$('fErr').textContent='That time has already passed. Pick a later time, or turn the alarm off.';return}
-  var t=editing;
+  var t=editing,isNew=!t;
   if(t){if(t.due!==due)t.rang=due<=Date.now();t.title=title;t.due=due;t.alarm=alarm}
   else{var n=nextId();t={id:'t'+n,nid:n,title:title,due:due,alarm:alarm,done:false,rang:due<=Date.now()};tasks.push(t)}
   persist();scheduleNative(t);closeForm();render();
+  if(isNew)afterNewTaskSaved();
 };
 $('fDelete').onclick=function(){
   var t=editing;if(!t)return;
@@ -331,7 +375,8 @@ $('list').addEventListener('click',function(e){
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!ringing)closeForm()});
 
 /* ---------- start ---------- */
-if(isNative){prepareNative().then(function(ok){if(ok)tasks.forEach(function(t){if(t.alarm&&!t.done&&t.due>Date.now())scheduleNative(t)})})}
+if(isNative){prepareNative().then(function(ok){if(ok)tasks.forEach(function(t){if(t.alarm&&!t.done&&t.due>Date.now())scheduleNative(t)})})
+  .then(startAds,startAds)}
 else showNotice('web');
 render();tick();setInterval(tick,1000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)tick()});
