@@ -9,7 +9,7 @@
   --bg:#EDF1F6; --surface:#FFFFFF; --ink:#16233B; --muted:#5D6B82; --line:#D5DCE6;
   --amber:#F5A300; --amber-ink:#3A2700; --red:#C8372D; --green:#23824F;
   box-sizing:border-box;
-  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px)); padding-bottom:var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px));
 }
 @media (prefers-color-scheme:dark){
   :root{ --bg:#0E1626; --surface:#18233A; --ink:#EEF2F8; --muted:#9BA8BD; --line:#2A3853;
@@ -56,7 +56,7 @@ ul{list-style:none;margin:0;padding:0}
 .credit{text-align:center;color:var(--muted);font-size:12px;margin:28px 0 0}
 .empty b{display:block;color:var(--ink);font-size:18px;margin-bottom:4px}
 
-.add{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));
+.add{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));
   background:linear-gradient(to top,var(--bg) 70%,transparent);display:flex;justify-content:center}
 .btn{border:0;border-radius:10px;padding:14px 18px;font-weight:700;min-height:48px}
 .btn.main{background:var(--amber);color:var(--amber-ink)}
@@ -67,7 +67,7 @@ ul{list-style:none;margin:0;padding:0}
 .veil{position:fixed;inset:0;background:rgba(8,14,26,.55);display:none;align-items:flex-end;justify-content:center;z-index:10}
 .veil.open{display:flex}
 .sheet{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;
-  padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px));max-height:92%;overflow:auto}
+  padding:20px 16px calc(20px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));max-height:92%;overflow:auto}
 .sheet h3{margin:0 0 14px;font-size:20px}
 label{display:block;font-size:14px;font-weight:500;margin:12px 0 4px}
 input[type=text],input[type=date],input[type=time]{width:100%;background:var(--bg);border:1.5px solid var(--line);
@@ -104,7 +104,7 @@ body.ad .veil:not(.ring){padding-bottom:50px}
   </header>
   <div class="notice" id="notice" hidden></div>
   <main id="list"></main>
-  <p class="credit">Made by PasuyoLabs</p>
+  <p class="credit">Made by PasuyoLabs<span id="ver"> &middot; v__APP_VERSION__</span></p>
 </div>
 
 <div class="add"><button class="btn main" id="addBtn">Add task</button></div>
@@ -190,7 +190,9 @@ function cancelNative(t){
 
 /* ---------- ads (Google AdMob) ----------
    ADS_TEST=true shows Google's sample ads only — safe for testing, earns nothing.
-   Change to false ONLY for the Play Store release build. Never tap your own real ads. */
+   Leave this as true here. The GitHub build switches it to false automatically
+   ONLY in the Play Store file (.aab). The test APK always keeps test ads.
+   Never tap your own real ads. */
 var ADS_TEST=true;
 var AD_BANNER='ca-app-pub-1108774748467505/8402753059';
 var AD_INTERSTITIAL='ca-app-pub-1108774748467505/5132310628';
@@ -378,6 +380,7 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!ringing)cl
 if(isNative){prepareNative().then(function(ok){if(ok)tasks.forEach(function(t){if(t.alarm&&!t.done&&t.due>Date.now())scheduleNative(t)})})
   .then(startAds,startAds)}
 else showNotice('web');
+if($('ver').textContent.indexOf('__')>=0)$('ver').hidden=true;  // version is filled in by the build
 render();tick();setInterval(tick,1000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)tick()});
 })();
