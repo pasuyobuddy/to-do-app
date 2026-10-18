@@ -16,10 +16,11 @@
     --amber:#FFB81F; --amber-ink:#2B1D00; --red:#FF7A6E; --green:#5DD197; }
 }
 *,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:Roboto,"Segoe UI",system-ui,-apple-system,sans-serif;
   font-size:16px;line-height:1.4;-webkit-tap-highlight-color:transparent}
-button,input{font:inherit;color:inherit}
+button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:3px solid var(--amber);outline-offset:2px}
 .app{max-width:560px;margin:0 auto;padding:20px 16px 120px}
@@ -70,7 +71,7 @@ ul{list-style:none;margin:0;padding:0}
   padding:20px 16px calc(20px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));max-height:92%;overflow:auto}
 .sheet h3{margin:0 0 14px;font-size:20px}
 label{display:block;font-size:14px;font-weight:500;margin:12px 0 4px}
-input[type=text],input[type=date],input[type=time]{width:100%;background:var(--bg);border:1.5px solid var(--line);
+input[type=text],input[type=date],input[type=time],select{width:100%;background:var(--bg);border:1.5px solid var(--line);
   border-radius:8px;padding:12px;min-height:48px;color-scheme:light dark}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .switch{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px;
@@ -118,6 +119,13 @@ body.ad .veil:not(.ring){padding-bottom:50px}
       <div><label for="fDate">Date</label><input type="date" id="fDate"></div>
       <div><label for="fTime">Time</label><input type="time" id="fTime"></div>
     </div>
+    <label for="fRepeat">Repeat</label>
+    <select id="fRepeat">
+      <option value="once">Does not repeat</option>
+      <option value="daily">Every day</option>
+      <option value="weekdays">Every weekday (Mon&ndash;Fri)</option>
+      <option value="weekly" id="fWeeklyOpt">Every week</option>
+    </select>
     <div class="switch">
       <label for="fAlarm" style="margin:0">Alarm<small>Ring at this date and time</small></label>
       <input type="checkbox" id="fAlarm" checked>
@@ -154,6 +162,8 @@ function save(k,v){mem[k]=v;try{localStorage.setItem(k,JSON.stringify(v))}catch(
 var tasks=load(KEY,[]);
 function persist(){save(KEY,tasks)}
 function nextId(){var n=load(NKEY,1);save(NKEY,n>=2000000000?1:n+1);return n}
+var SLOTS=31;   // repeating task: 30 upcoming alarms + 1 for snooze
+function nextIds(k){var a=[];for(var i=0;i<k;i++)a.push(nextId());return a}
 
 /* ---------- native (Android app) alarm bridge ---------- */
 var cap=window.Capacitor;
@@ -172,20 +182,25 @@ function prepareNative(){
     .catch(function(){nativeReady=null;return false});
   return nativeReady;
 }
+function alarmFor(t,id,at){return {id:id,title:'Time to do this',body:t.title,channelId:CHANNEL,
+  sound:'alarm.wav',schedule:{at:new Date(at).toISOString(),allowWhileIdle:true},extra:{taskId:t.id}}}
 function scheduleNative(t){
   if(!isNative)return;
   cancelNative(t).then(function(){
-    if(!t.alarm||t.done||t.due<=Date.now())return;
-    return prepareNative().then(function(ok){
-      if(!ok)return;
-      return LN('schedule',{notifications:[{id:t.nid,title:'Time to do this',body:t.title,channelId:CHANNEL,
-        sound:'alarm.wav',schedule:{at:new Date(t.due).toISOString(),allowWhileIdle:true},extra:{taskId:t.id}}]});
-    });
+    if(!t.alarm||t.done)return;
+    var now=Date.now(),list=[];
+    if(isRep(t)){
+      upcoming(t).forEach(function(at,i){list.push(alarmFor(t,t.ids[i],at))});
+      if(t.snz&&t.snz>now)list.push(alarmFor(t,t.ids[SLOTS-1],t.snz));
+    }else if(t.due>now)list.push(alarmFor(t,t.nid,t.due));
+    if(!list.length)return;
+    return prepareNative().then(function(ok){if(ok)return LN('schedule',{notifications:list})});
   }).catch(function(){});
 }
 function cancelNative(t){
   if(!isNative)return Promise.resolve();
-  return LN('cancel',{notifications:[{id:t.nid}]}).catch(function(){});
+  var ids=[t.nid].concat(t.ids||[]);
+  return LN('cancel',{notifications:ids.map(function(id){return {id:id}})}).catch(function(){});
 }
 
 /* ---------- ads (Google AdMob) ----------
@@ -254,6 +269,20 @@ function hm(d){return pad(d.getHours())+':'+pad(d.getMinutes())}
 function time12(d){var h=d.getHours(),s=h<12?'AM':'PM';h=h%12||12;return {t:h+':'+pad(d.getMinutes()),s:s}}
 function dayStart(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()}
 var DAY=86400000;
+/* repeating tasks: the next alarm is always kept in t.due */
+var REP_NAME={daily:'Every day',weekdays:'Mon\u2013Fri',weekly:'Every week'};
+function isRep(t){return !!(t.rep&&t.rep!=='once')}
+function repOk(rep,d){var w=d.getDay();return rep!=='weekdays'||(w>0&&w<6)}
+function nextOcc(rep,from,after){    // first repeat time at or after 'from' that is later than 'after'
+  var d=new Date(from),h=d.getHours(),m=d.getMinutes(),i=0;
+  while((d.getTime()<=after||!repOk(rep,d))&&i++<5000){d.setDate(d.getDate()+(rep==='weekly'?7:1));d.setHours(h,m,0,0)}
+  return d.getTime();
+}
+function upcoming(t){                 // the next 30 alarms (up to 30 days ahead) handed to Android
+  var out=[t.due],end=Date.now()+30*DAY;
+  while(out.length<SLOTS-1){var n=nextOcc(t.rep,out[out.length-1],out[out.length-1]);if(n>end)break;out.push(n)}
+  return out;
+}
 function niceDate(d){return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}
 
 /* ---------- render ---------- */
@@ -277,8 +306,8 @@ function render(){
       html+='<li class="task'+(t.done?' done':'')+(g==='over'?' late':'')+'">'
         +'<div class="when"><span class="t">'+tt.t+'</span><span class="d">'+tt.s+', '+esc(niceDate(d))+'</span></div>'
         +'<button class="body" data-edit="'+t.id+'" aria-label="Edit '+esc(t.title)+'"><span class="title">'+esc(t.title)+'</span>'
-        +'<span class="meta">'+(t.alarm?'Alarm on':'No alarm')+'</span></button>'
-        +'<button class="check" data-check="'+t.id+'" aria-label="'+(t.done?'Mark as not done':'Mark as done')+'"><span>&#10003;</span></button></li>';
+        +'<span class="meta">'+(t.alarm?'Alarm on':'No alarm')+(isRep(t)?' &middot; &#8635; '+REP_NAME[t.rep]:'')+'</span></button>'
+        +'<button class="check" data-check="'+t.id+'" aria-label="'+(isRep(t)?'Done for this time':t.done?'Mark as not done':'Mark as done')+'"><span>&#10003;</span></button></li>';
     });
     html+='</ul>';
   });
@@ -305,16 +334,23 @@ var ringing=null,lastMinute='';
 function checkDue(){
   var now=Date.now(),changed=false;
   tasks.forEach(function(t){
+    if(isRep(t)){
+      if(t.snz&&t.snz<=now){var s=t.snz;t.snz=null;changed=true;if(t.alarm&&now-s<90000&&!ringing)ring(t,s)}
+      if(t.due>now)return;
+      var was=t.due;t.due=nextOcc(t.rep,t.due,now);changed=true;   // move on to the next repeat
+      if(t.alarm&&now-was<90000&&!ringing)ring(t,was);
+      scheduleNative(t);return;
+    }
     if(t.done||!t.alarm||t.rang||t.due>now)return;
     t.rang=true;changed=true;
-    if(now-t.due<90000&&!ringing)ring(t);
+    if(now-t.due<90000&&!ringing)ring(t,t.due);
   });
   var m=hm(new Date());
   if(changed)persist();
   if(changed||m!==lastMinute){lastMinute=m;render()}
 }
-function ring(t){
-  ringing=t;var d=new Date(t.due),tt=time12(d);
+function ring(t,when){
+  ringing=t;var d=new Date(when),tt=time12(d);
   $('ringWhen').textContent='It is '+tt.t+' '+tt.s+'. Time to do this:';
   $('ringWhat').textContent=t.title;
   hideBannerForAlarm();
@@ -322,10 +358,12 @@ function ring(t){
 }
 function closeRing(){stopSound();$('ringVeil').classList.remove('open');ringing=null;bringBannerBack()}
 $('ringStop').onclick=closeRing;
-$('ringDone').onclick=function(){var t=ringing;closeRing();if(t)setDone(t,true)};
+$('ringDone').onclick=function(){var t=ringing;closeRing();if(t&&!isRep(t))setDone(t,true)};   // a repeating task already moved to its next time
 $('ringSnooze').onclick=function(){
   var t=ringing;closeRing();if(!t)return;
-  t.due=Date.now()+SNOOZE_MIN*60000;t.rang=false;persist();scheduleNative(t);render();
+  if(isRep(t))t.snz=Date.now()+SNOOZE_MIN*60000;   // keep the repeat times, add one extra alarm
+  else{t.due=Date.now()+SNOOZE_MIN*60000;t.rang=false}
+  persist();scheduleNative(t);render();
 };
 
 /* ---------- add / edit ---------- */
@@ -336,11 +374,17 @@ function openForm(t){
   if(!t){d.setMinutes(0,0,0)}
   $('formTitle').textContent=t?'Edit task':'New task';
   $('fTitle').value=t?t.title:'';$('fDate').value=ymd(d);$('fTime').value=hm(d);
+  $('fRepeat').value=t&&t.rep?t.rep:'once';weeklyLabel();
   $('fAlarm').checked=t?t.alarm:true;$('fErr').textContent='';
   $('fDeleteRow').hidden=!t;$('fSave').textContent=t?'Save changes':'Save task';
   $('formVeil').classList.add('open');
   if(!t)setTimeout(function(){$('fTitle').focus()},50);
 }
+function weeklyLabel(){
+  var p=$('fDate').value.split('-'),d=new Date(+p[0],+p[1]-1,+p[2]);
+  $('fWeeklyOpt').textContent=isNaN(d)?'Every week':'Every week on '+d.toLocaleDateString(undefined,{weekday:'long'});
+}
+$('fDate').addEventListener('change',weeklyLabel);
 function closeForm(){$('formVeil').classList.remove('open');editing=null}
 $('addBtn').onclick=function(){openForm()};
 $('fCancel').onclick=closeForm;
@@ -351,11 +395,14 @@ $('fSave').onclick=function(){
   if(!dv||!tv){$('fErr').textContent='Pick both a date and a time.';return}
   var p=dv.split('-'),q=tv.split(':'),due=new Date(+p[0],+p[1]-1,+p[2],+q[0],+q[1],0,0).getTime();
   if(isNaN(due)){$('fErr').textContent='That date or time is not valid.';return}
-  var alarm=$('fAlarm').checked;
-  if(alarm&&due<=Date.now()&&!(editing&&editing.due===due)){$('fErr').textContent='That time has already passed. Pick a later time, or turn the alarm off.';return}
+  var alarm=$('fAlarm').checked,rep=$('fRepeat').value;
+  if(rep!=='once')due=nextOcc(rep,due,Date.now());   // repeating: start from the next time that has not passed
+  else if(alarm&&due<=Date.now()&&!(editing&&editing.due===due)){$('fErr').textContent='That time has already passed. Pick a later time, or turn the alarm off.';return}
   var t=editing,isNew=!t;
   if(t){if(t.due!==due)t.rang=due<=Date.now();t.title=title;t.due=due;t.alarm=alarm}
   else{var n=nextId();t={id:'t'+n,nid:n,title:title,due:due,alarm:alarm,done:false,rang:due<=Date.now()};tasks.push(t)}
+  t.rep=rep;t.snz=null;
+  if(rep!=='once'){t.done=false;t.rang=false;if(!t.ids)t.ids=nextIds(SLOTS)}
   persist();scheduleNative(t);closeForm();render();
   if(isNew)afterNewTaskSaved();
 };
@@ -364,6 +411,9 @@ $('fDelete').onclick=function(){
   cancelNative(t);tasks=tasks.filter(function(x){return x.id!==t.id});persist();closeForm();render();
 };
 function setDone(t,done){
+  if(isRep(t)){   // a repeating task is never finished: skip to its next time
+    t.due=nextOcc(t.rep,t.due,Math.max(t.due,Date.now()));t.snz=null;persist();scheduleNative(t);render();return;
+  }
   t.done=done;persist();
   if(done)cancelNative(t);else scheduleNative(t);
   render();
