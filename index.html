@@ -74,10 +74,16 @@ label{display:block;font-size:14px;font-weight:500;margin:12px 0 4px}
 input[type=text],input[type=date],input[type=time],select{width:100%;background:var(--bg);border:1.5px solid var(--line);
   border-radius:8px;padding:12px;min-height:48px;color-scheme:light dark}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.two>div{min-width:0}
+.two.solo{grid-template-columns:1fr}
 .switch{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px;
   background:var(--bg);border-radius:8px}
 .switch small{display:block;color:var(--muted);font-weight:400}
 .switch input{width:24px;height:24px;accent-color:var(--amber)}
+.days{display:flex;gap:6px;margin-top:8px}
+.days button{flex:1;min-width:0;min-height:44px;border-radius:50%;aspect-ratio:1;border:1.5px solid var(--line);
+  background:var(--bg);font-weight:700;padding:0}
+.days button[aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:var(--amber-ink)}
 .err{color:var(--red);font-size:14px;min-height:20px;margin-top:8px}
 .row{display:flex;gap:10px;margin-top:8px}
 .row .btn{flex:1}
@@ -115,19 +121,22 @@ body.ad .veil:not(.ring){padding-bottom:50px}
     <h3 id="formTitle">New task</h3>
     <label for="fTitle">What do you need to do?</label>
     <input type="text" id="fTitle" maxlength="120" autocomplete="off" placeholder="Pay electric bill">
-    <div class="two">
-      <div><label for="fDate">Date</label><input type="date" id="fDate"></div>
-      <div><label for="fTime">Time</label><input type="time" id="fTime"></div>
-    </div>
     <label for="fRepeat">Repeat</label>
     <select id="fRepeat">
       <option value="once">Does not repeat</option>
       <option value="daily">Every day</option>
       <option value="weekdays">Every weekday (Mon&ndash;Fri)</option>
-      <option value="weekly" id="fWeeklyOpt">Every week</option>
+      <option value="custom">Pick days&hellip;</option>
     </select>
+    <div class="days" id="fDays" role="group" aria-label="Repeat on these days" hidden>
+      <button type="button" data-day="1" aria-label="Monday">M</button><button type="button" data-day="2" aria-label="Tuesday">T</button><button type="button" data-day="3" aria-label="Wednesday">W</button><button type="button" data-day="4" aria-label="Thursday">T</button><button type="button" data-day="5" aria-label="Friday">F</button><button type="button" data-day="6" aria-label="Saturday">S</button><button type="button" data-day="0" aria-label="Sunday">S</button>
+    </div>
+    <div class="two" id="fWhen">
+      <div id="fDateBox"><label for="fDate">Date</label><input type="date" id="fDate"></div>
+      <div><label for="fTime">Time</label><input type="time" id="fTime"></div>
+    </div>
     <div class="switch">
-      <label for="fAlarm" style="margin:0">Alarm<small>Ring at this date and time</small></label>
+      <label for="fAlarm" style="margin:0">Alarm<small id="fAlarmHint">Ring at this date and time</small></label>
       <input type="checkbox" id="fAlarm" checked>
     </div>
     <div class="err" id="fErr" role="alert"></div>
@@ -271,16 +280,24 @@ function dayStart(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate()).g
 var DAY=86400000;
 /* repeating tasks: the next alarm is always kept in t.due */
 var REP_NAME={daily:'Every day',weekdays:'Mon\u2013Fri',weekly:'Every week'};
+var DAY_ORDER=[1,2,3,4,5,6,0],DAY_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function isRep(t){return !!(t.rep&&t.rep!=='once')}
-function repOk(rep,d){var w=d.getDay();return rep!=='weekdays'||(w>0&&w<6)}
-function nextOcc(rep,from,after){    // first repeat time at or after 'from' that is later than 'after'
+function repLabel(t){
+  if(t.rep!=='custom')return REP_NAME[t.rep];
+  return DAY_ORDER.filter(function(w){return t.days.indexOf(w)>=0}).map(function(w){return DAY_SHORT[w]}).join(', ');
+}
+function repOk(rep,d,days){var w=d.getDay();
+  if(rep==='weekdays')return w>0&&w<6;
+  if(rep==='custom')return !!days&&days.indexOf(w)>=0;
+  return true}
+function nextOcc(rep,from,after,days){    // first repeat time at or after 'from' that is later than 'after'
   var d=new Date(from),h=d.getHours(),m=d.getMinutes(),i=0;
-  while((d.getTime()<=after||!repOk(rep,d))&&i++<5000){d.setDate(d.getDate()+(rep==='weekly'?7:1));d.setHours(h,m,0,0)}
+  while((d.getTime()<=after||!repOk(rep,d,days))&&i++<5000){d.setDate(d.getDate()+(rep==='weekly'?7:1));d.setHours(h,m,0,0)}
   return d.getTime();
 }
 function upcoming(t){                 // the next 30 alarms (up to 30 days ahead) handed to Android
   var out=[t.due],end=Date.now()+30*DAY;
-  while(out.length<SLOTS-1){var n=nextOcc(t.rep,out[out.length-1],out[out.length-1]);if(n>end)break;out.push(n)}
+  while(out.length<SLOTS-1){var n=nextOcc(t.rep,out[out.length-1],out[out.length-1],t.days);if(n>end)break;out.push(n)}
   return out;
 }
 function niceDate(d){return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}
@@ -306,7 +323,7 @@ function render(){
       html+='<li class="task'+(t.done?' done':'')+(g==='over'?' late':'')+'">'
         +'<div class="when"><span class="t">'+tt.t+'</span><span class="d">'+tt.s+', '+esc(niceDate(d))+'</span></div>'
         +'<button class="body" data-edit="'+t.id+'" aria-label="Edit '+esc(t.title)+'"><span class="title">'+esc(t.title)+'</span>'
-        +'<span class="meta">'+(t.alarm?'Alarm on':'No alarm')+(isRep(t)?' &middot; &#8635; '+REP_NAME[t.rep]:'')+'</span></button>'
+        +'<span class="meta">'+(t.alarm?'Alarm on':'No alarm')+(isRep(t)?' &middot; &#8635; '+esc(repLabel(t)):'')+'</span></button>'
         +'<button class="check" data-check="'+t.id+'" aria-label="'+(isRep(t)?'Done for this time':t.done?'Mark as not done':'Mark as done')+'"><span>&#10003;</span></button></li>';
     });
     html+='</ul>';
@@ -337,7 +354,7 @@ function checkDue(){
     if(isRep(t)){
       if(t.snz&&t.snz<=now){var s=t.snz;t.snz=null;changed=true;if(t.alarm&&now-s<90000&&!ringing)ring(t,s)}
       if(t.due>now)return;
-      var was=t.due;t.due=nextOcc(t.rep,t.due,now);changed=true;   // move on to the next repeat
+      var was=t.due;t.due=nextOcc(t.rep,t.due,now,t.days);changed=true;   // move on to the next repeat
       if(t.alarm&&now-was<90000&&!ringing)ring(t,was);
       scheduleNative(t);return;
     }
@@ -374,17 +391,24 @@ function openForm(t){
   if(!t){d.setMinutes(0,0,0)}
   $('formTitle').textContent=t?'Edit task':'New task';
   $('fTitle').value=t?t.title:'';$('fDate').value=ymd(d);$('fTime').value=hm(d);
-  $('fRepeat').value=t&&t.rep?t.rep:'once';weeklyLabel();
+  var r=t&&t.rep?t.rep:'once';
+  $('fRepeat').value=r==='weekly'?'custom':r;
+  pickDays(r==='custom'?t.days:[d.getDay()]);showDays();
   $('fAlarm').checked=t?t.alarm:true;$('fErr').textContent='';
   $('fDeleteRow').hidden=!t;$('fSave').textContent=t?'Save changes':'Save task';
   $('formVeil').classList.add('open');
   if(!t)setTimeout(function(){$('fTitle').focus()},50);
 }
-function weeklyLabel(){
-  var p=$('fDate').value.split('-'),d=new Date(+p[0],+p[1]-1,+p[2]);
-  $('fWeeklyOpt').textContent=isNaN(d)?'Every week':'Every week on '+d.toLocaleDateString(undefined,{weekday:'long'});
+function pickDays(list){[].forEach.call($('fDays').children,function(b){b.setAttribute('aria-pressed',list.indexOf(+b.getAttribute('data-day'))>=0?'true':'false')})}
+function chosenDays(){return [].filter.call($('fDays').children,function(b){return b.getAttribute('aria-pressed')==='true'}).map(function(b){return +b.getAttribute('data-day')})}
+function showDays(){   // repeating tasks only need a time: hide the date
+  var r=$('fRepeat').value,once=r==='once';
+  $('fDays').hidden=r!=='custom';$('fDateBox').hidden=!once;$('fWhen').classList.toggle('solo',!once);
+  $('fAlarmHint').textContent=once?'Ring at this date and time':'Ring at this time on the repeat days';
 }
-$('fDate').addEventListener('change',weeklyLabel);
+$('fRepeat').addEventListener('change',showDays);
+$('fDays').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
+  b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')==='true'?'false':'true');$('fErr').textContent=''});
 function closeForm(){$('formVeil').classList.remove('open');editing=null}
 $('addBtn').onclick=function(){openForm()};
 $('fCancel').onclick=closeForm;
@@ -392,16 +416,19 @@ $('formVeil').addEventListener('click',function(e){if(e.target===this)closeForm(
 $('fSave').onclick=function(){
   var title=$('fTitle').value.trim(),dv=$('fDate').value,tv=$('fTime').value;
   if(!title){$('fErr').textContent='Type what you need to do.';$('fTitle').focus();return}
-  if(!dv||!tv){$('fErr').textContent='Pick both a date and a time.';return}
+  var once=$('fRepeat').value==='once';
+  if(!tv||(once&&!dv)){$('fErr').textContent=once?'Pick both a date and a time.':'Pick a time.';return}
+  if(!once)dv=ymd(new Date());   // repeating: start from today
   var p=dv.split('-'),q=tv.split(':'),due=new Date(+p[0],+p[1]-1,+p[2],+q[0],+q[1],0,0).getTime();
   if(isNaN(due)){$('fErr').textContent='That date or time is not valid.';return}
-  var alarm=$('fAlarm').checked,rep=$('fRepeat').value;
-  if(rep!=='once')due=nextOcc(rep,due,Date.now());   // repeating: start from the next time that has not passed
+  var alarm=$('fAlarm').checked,rep=$('fRepeat').value,days=rep==='custom'?chosenDays():null;
+  if(rep==='custom'&&!days.length){$('fErr').textContent='Tap at least one day.';return}
+  if(rep!=='once')due=nextOcc(rep,due,Date.now(),days);   // repeating: start from the next time that has not passed
   else if(alarm&&due<=Date.now()&&!(editing&&editing.due===due)){$('fErr').textContent='That time has already passed. Pick a later time, or turn the alarm off.';return}
   var t=editing,isNew=!t;
   if(t){if(t.due!==due)t.rang=due<=Date.now();t.title=title;t.due=due;t.alarm=alarm}
   else{var n=nextId();t={id:'t'+n,nid:n,title:title,due:due,alarm:alarm,done:false,rang:due<=Date.now()};tasks.push(t)}
-  t.rep=rep;t.snz=null;
+  t.rep=rep;t.days=days;t.snz=null;
   if(rep!=='once'){t.done=false;t.rang=false;if(!t.ids)t.ids=nextIds(SLOTS)}
   persist();scheduleNative(t);closeForm();render();
   if(isNew)afterNewTaskSaved();
@@ -412,7 +439,7 @@ $('fDelete').onclick=function(){
 };
 function setDone(t,done){
   if(isRep(t)){   // a repeating task is never finished: skip to its next time
-    t.due=nextOcc(t.rep,t.due,Math.max(t.due,Date.now()));t.snz=null;persist();scheduleNative(t);render();return;
+    t.due=nextOcc(t.rep,t.due,Math.max(t.due,Date.now()),t.days);t.snz=null;persist();scheduleNative(t);render();return;
   }
   t.done=done;persist();
   if(done)cancelNative(t);else scheduleNative(t);

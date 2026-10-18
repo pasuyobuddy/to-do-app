@@ -1,6 +1,6 @@
 // Runs after "npx cap add android" (GitHub Actions / Codemagic).
 // 1) lets the app ring at the exact minute, 2) copies the alarm sound into the Android app,
-// 3) adds the AdMob App ID to the Android manifest, 4) sets the app version numbers.
+// 3) adds the AdMob App ID to the Android manifest, 4) sets the app version numbers, 5) sets the app icon.
 const fs = require('fs');
 const path = require('path');
 
@@ -23,6 +23,18 @@ if (!xml.includes('com.google.android.gms.ads.APPLICATION_ID')) {
 }
 fs.writeFileSync(manifest, xml);
 
+// 5) app icon: copy our To-Do icon (all sizes) over Capacitor's default icon.
+// app-icons.json holds every icon size (as text), so GitHub only needs one plain file.
+const iconFile = 'app-icons.json';
+if (!fs.existsSync(iconFile)) throw new Error('app-icons.json is missing: upload it to GitHub');
+const icons = JSON.parse(fs.readFileSync(iconFile, 'utf8'));
+const resDir = path.join('android', 'app', 'src', 'main', 'res');
+for (const rel of Object.keys(icons)) {
+  const dest = path.join(resDir, ...rel.split('/'));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, Buffer.from(icons[rel], 'base64'));
+}
+
 const raw = path.join('android', 'app', 'src', 'main', 'res', 'raw');
 fs.mkdirSync(raw, { recursive: true });
 fs.copyFileSync(path.join('assets', 'alarm.wav'), path.join(raw, 'alarm.wav'));
@@ -41,5 +53,5 @@ gradle = gradle.replace(/versionCode \d+/, 'versionCode ' + versionCode)
                .replace(/versionName "[^"]*"/, 'versionName "' + versionName + '"');
 fs.writeFileSync(gradleFile, gradle);
 
-console.log('Android setup done: permissions, AdMob app ID, alarm sound, version ' +
+console.log('Android setup done: permissions, AdMob app ID, app icon, alarm sound, version ' +
   versionName + ' (code ' + versionCode + ').');
