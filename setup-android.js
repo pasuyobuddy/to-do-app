@@ -53,5 +53,26 @@ gradle = gradle.replace(/versionCode \d+/, 'versionCode ' + versionCode)
                .replace(/versionName "[^"]*"/, 'versionName "' + versionName + '"');
 fs.writeFileSync(gradleFile, gradle);
 
-console.log('Android setup done: permissions, AdMob app ID, app icon, alarm sound, version ' +
+// 6) Alarm-clock mode: schedule each alarm with AlarmManager.setAlarmClock(), the same
+//    kind of alarm the phone's own Clock app uses. Phones (Nubia, Xiaomi, Samsung...) do not
+//    hold these back while the phone sleeps. Patches the notification plugin before the build.
+const lnFile = path.join('node_modules', '@capacitor', 'local-notifications', 'android', 'src', 'main',
+  'kotlin', 'com', 'capacitorjs', 'plugins', 'localnotifications', 'LocalNotificationManager.kt');
+let ln = fs.readFileSync(lnFile, 'utf8');
+const oldCall = 'alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)';
+if (!ln.includes('setAlarmClock(')) {
+  if (!ln.includes(oldCall)) throw new Error('Alarm-clock patch: could not find the alarm call in ' + lnFile);
+  const newCall = [
+    'run {',
+    '                    val openApp = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: android.content.Intent()',
+    '                    val showPi = android.app.PendingIntent.getActivity(context, 0, openApp,',
+    '                        android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)',
+    '                    alarmManager.setAlarmClock(android.app.AlarmManager.AlarmClockInfo(trigger, showPi), pendingIntent)',
+    '                }'
+  ].join('\n');
+  ln = ln.replace(oldCall, newCall);
+  fs.writeFileSync(lnFile, ln);
+}
+
+console.log('Android setup done: permissions, AdMob app ID, app icon, alarm sound, alarm-clock mode, version ' +
   versionName + ' (code ' + versionCode + ').');

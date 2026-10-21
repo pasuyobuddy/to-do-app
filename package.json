@@ -1,6 +1,6 @@
 {
   "name": "todo-alarm",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "private": true,
   "description": "To-do list with date, time and alarm",
   "dependencies": {
