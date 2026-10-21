@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>To-Do Alarm</title>
+<style>
+:root{
+  --bg:#EDF1F6; --surface:#FFFFFF; --ink:#16233B; --muted:#5D6B82; --line:#D5DCE6;
+  --amber:#F5A300; --amber-ink:#3A2700; --red:#C8372D; --green:#23824F;
+  box-sizing:border-box;
+  padding-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px)); padding-bottom:var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px));
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#0E1626; --surface:#18233A; --ink:#EEF2F8; --muted:#9BA8BD; --line:#2A3853;
+    --amber:#FFB81F; --amber-ink:#2B1D00; --red:#FF7A6E; --green:#5DD197; }
+}
+*,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Roboto,"Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:16px;line-height:1.4;-webkit-tap-highlight-color:transparent}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.app{max-width:560px;margin:0 auto;padding:20px 16px 120px}
+
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:18px}
+.top h1{font-size:15px;font-weight:500;color:var(--muted);margin:0 0 2px}
+.clock{font-size:44px;font-weight:800;letter-spacing:-1.5px;line-height:1;font-variant-numeric:tabular-nums}
+.count{text-align:right;color:var(--muted);font-size:14px}
+.count b{display:block;font-size:22px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+.notice{background:var(--surface);border-left:4px solid var(--red);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:14px}
+.notice button{background:none;border:0;padding:0;color:var(--ink);font-weight:700;text-decoration:underline}
+
+h2{font-size:14px;font-weight:700;margin:22px 4px 8px;color:var(--muted)}
+h2.over{color:var(--red)}
+ul{list-style:none;margin:0;padding:0}
+.task{display:grid;grid-template-columns:92px 1fr 44px;align-items:center;background:var(--surface);
+  border-radius:10px;margin-bottom:8px;overflow:hidden}
+.task .when{align-self:stretch;display:flex;flex-direction:column;justify-content:center;padding:10px 0 10px 12px;
+  border-right:1px dashed var(--line)}
+.task .t{font-size:21px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums;line-height:1.1}
+.task .d{font-size:12px;color:var(--muted)}
+.task .body{background:none;border:0;text-align:left;padding:12px;min-height:60px;display:flex;flex-direction:column;justify-content:center}
+.task .title{font-weight:500;word-break:break-word}
+.task .meta{font-size:12px;color:var(--muted)}
+.task.late .t{color:var(--red)}
+.task.done .title{text-decoration:line-through;color:var(--muted)}
+.task.done .t{color:var(--muted)}
+.check{width:44px;height:100%;min-height:60px;background:none;border:0;display:grid;place-items:center}
+.check span{width:24px;height:24px;border-radius:50%;border:2px solid var(--muted);display:grid;place-items:center;font-size:14px;line-height:1;color:transparent}
+.task.done .check span{background:var(--green);border-color:var(--green);color:#fff}
+
+.empty{text-align:center;color:var(--muted);padding:48px 20px}
+.credit{text-align:center;color:var(--muted);font-size:12px;margin:28px 0 0}
+.empty b{display:block;color:var(--ink);font-size:18px;margin-bottom:4px}
+
+.add{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));
+  background:linear-gradient(to top,var(--bg) 70%,transparent);display:flex;justify-content:center}
+.btn{border:0;border-radius:10px;padding:14px 18px;font-weight:700;min-height:48px}
+.btn.main{background:var(--amber);color:var(--amber-ink)}
+.btn.quiet{background:transparent;border:1.5px solid var(--line)}
+.btn.danger{background:transparent;color:var(--red);border:1.5px solid var(--line)}
+.add .btn{width:100%;max-width:528px;font-size:17px}
+
+.veil{position:fixed;inset:0;background:rgba(8,14,26,.55);display:none;align-items:flex-end;justify-content:center;z-index:10}
+.veil.open{display:flex}
+.sheet{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;
+  padding:20px 16px calc(20px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));max-height:92%;overflow:auto}
+.sheet h3{margin:0 0 14px;font-size:20px}
+label{display:block;font-size:14px;font-weight:500;margin:12px 0 4px}
+input[type=text],input[type=date],input[type=time],select{width:100%;background:var(--bg);border:1.5px solid var(--line);
+  border-radius:8px;padding:12px;min-height:48px;color-scheme:light dark}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.two>div{min-width:0}
+.two.solo{grid-template-columns:1fr}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px;
+  background:var(--bg);border-radius:8px}
+.switch small{display:block;color:var(--muted);font-weight:400}
+.switch input{width:24px;height:24px;accent-color:var(--amber)}
+.days{display:flex;gap:6px;margin-top:8px}
+.days button{flex:1;min-width:0;min-height:44px;border-radius:50%;aspect-ratio:1;border:1.5px solid var(--line);
+  background:var(--bg);font-weight:700;padding:0}
+.days button[aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:var(--amber-ink)}
+.err{color:var(--red);font-size:14px;min-height:20px;margin-top:8px}
+.row{display:flex;gap:10px;margin-top:8px}
+.row .btn{flex:1}
+
+.ring{align-items:center;padding:16px}
+.ring .sheet{border-radius:16px;text-align:center;border-top:8px solid var(--amber)}
+.ring p{margin:0;color:var(--muted)}
+.ring .what{font-size:26px;font-weight:800;margin:6px 0 18px;word-break:break-word;color:var(--ink)}
+.ring .btn{display:block;width:100%;margin-top:8px}
+/* banner ad sits at the very bottom (50dp tall): lift everything above it so nothing is covered */
+body.ad .app{padding-bottom:170px}
+body.ad .add{bottom:50px}
+body.ad .veil:not(.ring){padding-bottom:50px}
+@media (prefers-reduced-motion:no-preference){
+  .ring.open .sheet{animation:nudge .5s ease-in-out 6}
+  @keyframes nudge{0%,100%{transform:rotate(0)}25%{transform:rotate(-1.2deg)}75%{transform:rotate(1.2deg)}}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div><h1 id="today"></h1><div class="clock" id="clock">--:--</div></div>
+    <div class="count"><b id="left">0</b>left to do</div>
+  </header>
+  <div class="notice" id="notice" hidden></div>
+  <main id="list"></main>
+  <p class="credit">Made by PasuyoLabs<span id="ver"> &middot; v__APP_VERSION__</span></p>
+</div>
+
+<div class="add"><button class="btn main" id="addBtn">Add task</button></div>
+
+<div class="veil" id="formVeil">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="formTitle">
+    <h3 id="formTitle">New task</h3>
+    <label for="fTitle">What do you need to do?</label>
+    <input type="text" id="fTitle" maxlength="120" autocomplete="off" placeholder="Pay electric bill">
+    <label for="fRepeat">Repeat</label>
+    <select id="fRepeat">
+      <option value="once">Does not repeat</option>
+      <option value="daily">Every day</option>
+      <option value="weekdays">Every weekday (Mon&ndash;Fri)</option>
+      <option value="custom">Pick days&hellip;</option>
+    </select>
+    <div class="days" id="fDays" role="group" aria-label="Repeat on these days" hidden>
+      <button type="button" data-day="1" aria-label="Monday">M</button><button type="button" data-day="2" aria-label="Tuesday">T</button><button type="button" data-day="3" aria-label="Wednesday">W</button><button type="button" data-day="4" aria-label="Thursday">T</button><button type="button" data-day="5" aria-label="Friday">F</button><button type="button" data-day="6" aria-label="Saturday">S</button><button type="button" data-day="0" aria-label="Sunday">S</button>
+    </div>
+    <div class="two" id="fWhen">
+      <div id="fDateBox"><label for="fDate">Date</label><input type="date" id="fDate"></div>
+      <div><label for="fTime">Time</label><input type="time" id="fTime"></div>
+    </div>
+    <div class="switch">
+      <label for="fAlarm" style="margin:0">Alarm<small id="fAlarmHint">Ring at this date and time</small></label>
+      <input type="checkbox" id="fAlarm" checked>
+    </div>
+    <div class="err" id="fErr" role="alert"></div>
+    <div class="row">
+      <button class="btn quiet" id="fCancel">Cancel</button>
+      <button class="btn main" id="fSave">Save task</button>
+    </div>
+    <div class="row" id="fDeleteRow" hidden><button class="btn danger" id="fDelete">Delete task</button></div>
+  </div>
+</div>
+
+<div class="veil ring" id="ringVeil">
+  <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="ringWhat">
+    <p id="ringWhen"></p>
+    <div class="what" id="ringWhat"></div>
+    <button class="btn main" id="ringDone">Mark as done</button>
+    <button class="btn quiet" id="ringSnooze">Snooze 5 minutes</button>
+    <button class="btn quiet" id="ringStop">Stop alarm</button>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var KEY='todoalarm.tasks.v1', NKEY='todoalarm.nextid.v1', CHANNEL='task_alarms_v1', SNOOZE_MIN=5;
+var $=function(id){return document.getElementById(id)};
+
+/* ---------- storage (falls back to memory if the browser blocks it) ---------- */
+var mem={};
+function load(k,def){try{var v=localStorage.getItem(k);return v==null?def:JSON.parse(v)}catch(e){return k in mem?mem[k]:def}}
+function save(k,v){mem[k]=v;try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+var tasks=load(KEY,[]);
+function persist(){save(KEY,tasks)}
+function nextId(){var n=load(NKEY,1);save(NKEY,n>=2000000000?1:n+1);return n}
+var SLOTS=31;   // repeating task: 30 upcoming alarms + 1 for snooze
+function nextIds(k){var a=[];for(var i=0;i<k;i++)a.push(nextId());return a}
+
+/* ---------- native (Android app) alarm bridge ---------- */
+var cap=window.Capacitor;
+var isNative=!!(cap&&cap.isNativePlatform&&cap.isNativePlatform()&&cap.nativePromise);
+function LN(method,opts){return cap.nativePromise('LocalNotifications',method,opts||{})}
+var nativeReady=null;
+function prepareNative(){
+  if(!isNative)return Promise.resolve(false);
+  if(nativeReady)return nativeReady;
+  nativeReady=LN('createChannel',{id:CHANNEL,name:'Task alarms',description:'Rings when a task is due',
+      importance:5,visibility:1,sound:'alarm.wav',vibration:true,lights:true})
+    .catch(function(){})
+    .then(function(){return LN('checkPermissions')})
+    .then(function(p){return p&&p.display==='granted'?p:LN('requestPermissions')})
+    .then(function(p){var ok=!!(p&&p.display==='granted');showNotice(ok?'':'perm');return ok})
+    .catch(function(){nativeReady=null;return false});
+  return nativeReady;
+}
+function alarmFor(t,id,at){return {id:id,title:'Time to do this',body:t.title,channelId:CHANNEL,
+  sound:'alarm.wav',schedule:{at:new Date(at).toISOString(),allowWhileIdle:true},extra:{taskId:t.id}}}
+function scheduleNative(t){
+  if(!isNative)return;
+  cancelNative(t).then(function(){
+    if(!t.alarm||t.done)return;
+    var now=Date.now(),list=[];
+    if(isRep(t)){
+      upcoming(t).forEach(function(at,i){list.push(alarmFor(t,t.ids[i],at))});
+      if(t.snz&&t.snz>now)list.push(alarmFor(t,t.ids[SLOTS-1],t.snz));
+    }else if(t.due>now)list.push(alarmFor(t,t.nid,t.due));
+    if(!list.length)return;
+    return prepareNative().then(function(ok){if(ok)return LN('schedule',{notifications:list})});
+  }).catch(function(){});
+}
+function cancelNative(t){
+  if(!isNative)return Promise.resolve();
+  var ids=[t.nid].concat(t.ids||[]);
+  return LN('cancel',{notifications:ids.map(function(id){return {id:id}})}).catch(function(){});
+}
+
+/* ---------- ads (Google AdMob) ----------
+   ADS_TEST=true shows Google's sample ads only — safe for testing, earns nothing.
+   Leave this as true here. The GitHub build switches it to false automatically
+   ONLY in the Play Store file (.aab). The test APK always keeps test ads.
+   Never tap your own real ads. */
+var ADS_TEST=true;
+var AD_BANNER='ca-app-pub-1108774748467505/8402753059';
+var AD_INTERSTITIAL='ca-app-pub-1108774748467505/5132310628';
+var INTERSTITIAL_EVERY=3;            // full-screen ad after every 3rd new task saved
+function AD(method,opts){return cap.nativePromise('AdMob',method,opts||{})}
+var adsOn=false,bannerUp=false,interReady=false,savesSinceAd=0;
+function startAds(){
+  if(!isNative)return;
+  AD('initialize',{initializeForTesting:ADS_TEST})
+    .then(function(){return AD('requestConsentInfo',{}).then(function(c){
+      if(c&&c.status==='REQUIRED'&&c.isConsentFormAvailable)return AD('showConsentForm',{});
+    }).catch(function(){})})
+    .then(function(){adsOn=true;showBanner();prepInter()})
+    .catch(function(){});
+}
+function showBanner(){
+  if(!adsOn||ringing)return;
+  AD('showBanner',{adId:AD_BANNER,adSize:'BANNER',position:'BOTTOM_CENTER',margin:0,isTesting:ADS_TEST})
+    .then(function(){bannerUp=true;document.body.classList.add('ad')}).catch(function(){});
+}
+function hideBannerForAlarm(){if(bannerUp)AD('hideBanner').catch(function(){})}
+function bringBannerBack(){if(bannerUp)AD('resumeBanner').catch(function(){})}
+function prepInter(){
+  if(!adsOn||interReady)return;
+  AD('prepareInterstitial',{adId:AD_INTERSTITIAL,isTesting:ADS_TEST})
+    .then(function(){interReady=true}).catch(function(){interReady=false});
+}
+function afterNewTaskSaved(){
+  if(!adsOn)return;
+  savesSinceAd++;
+  if(savesSinceAd<INTERSTITIAL_EVERY||!interReady||ringing)return;
+  savesSinceAd=0;interReady=false;
+  AD('showInterstitial').catch(function(){}).then(function(){setTimeout(prepInter,1000)});
+}
+
+/* ---------- alarm sound while the app is open in a browser ---------- */
+var actx=null,beepTimer=null;
+function unlockAudio(){try{if(!actx){var C=window.AudioContext||window.webkitAudioContext;if(C)actx=new C()}
+  if(actx&&actx.state==='suspended')actx.resume()}catch(e){}}
+document.addEventListener('pointerdown',unlockAudio);
+function beep(){
+  if(!actx)return;
+  [0,.22,.44].forEach(function(off){
+    var o=actx.createOscillator(),g=actx.createGain(),t0=actx.currentTime+off;
+    o.type='square';o.frequency.value=880;
+    g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.25,t0+.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+.16);
+    o.connect(g);g.connect(actx.destination);o.start(t0);o.stop(t0+.18);
+  });
+}
+function startSound(){if(isNative)return;stopSound();unlockAudio();beep();beepTimer=setInterval(beep,1100);
+  if(navigator.vibrate)try{navigator.vibrate([300,150,300,150,300])}catch(e){}}
+function stopSound(){if(beepTimer){clearInterval(beepTimer);beepTimer=null}}
+
+/* ---------- dates ---------- */
+function pad(n){return n<10?'0'+n:''+n}
+function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function hm(d){return pad(d.getHours())+':'+pad(d.getMinutes())}
+function time12(d){var h=d.getHours(),s=h<12?'AM':'PM';h=h%12||12;return {t:h+':'+pad(d.getMinutes()),s:s}}
+function dayStart(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()}
+var DAY=86400000;
+/* repeating tasks: the next alarm is always kept in t.due */
+var REP_NAME={daily:'Every day',weekdays:'Mon\u2013Fri',weekly:'Every week'};
+var DAY_ORDER=[1,2,3,4,5,6,0],DAY_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function isRep(t){return !!(t.rep&&t.rep!=='once')}
+function repLabel(t){
+  if(t.rep!=='custom')return REP_NAME[t.rep];
+  return DAY_ORDER.filter(function(w){return t.days.indexOf(w)>=0}).map(function(w){return DAY_SHORT[w]}).join(', ');
+}
+function repOk(rep,d,days){var w=d.getDay();
+  if(rep==='weekdays')return w>0&&w<6;
+  if(rep==='custom')return !!days&&days.indexOf(w)>=0;
+  return true}
+function nextOcc(rep,from,after,days){    // first repeat time at or after 'from' that is later than 'after'
+  var d=new Date(from),h=d.getHours(),m=d.getMinutes(),i=0;
+  while((d.getTime()<=after||!repOk(rep,d,days))&&i++<5000){d.setDate(d.getDate()+(rep==='weekly'?7:1));d.setHours(h,m,0,0)}
+  return d.getTime();
+}
+function upcoming(t){                 // the next 30 alarms (up to 30 days ahead) handed to Android
+  var out=[t.due],end=Date.now()+30*DAY;
+  while(out.length<SLOTS-1){var n=nextOcc(t.rep,out[out.length-1],out[out.length-1],t.days);if(n>end)break;out.push(n)}
+  return out;
+}
+function niceDate(d){return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}
+
+/* ---------- render ---------- */
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function render(){
+  var now=Date.now(),t0=dayStart(new Date()),groups={over:[],today:[],tomorrow:[],later:[],done:[]};
+  tasks.slice().sort(function(a,b){return a.due-b.due}).forEach(function(t){
+    if(t.done)groups.done.push(t);
+    else if(t.due<now)groups.over.push(t);
+    else if(t.due<t0+DAY)groups.today.push(t);
+    else if(t.due<t0+2*DAY)groups.tomorrow.push(t);
+    else groups.later.push(t);
+  });
+  groups.done.reverse();
+  var names={over:'Overdue',today:'Today',tomorrow:'Tomorrow',later:'Later',done:'Done'},html='';
+  ['over','today','tomorrow','later','done'].forEach(function(g){
+    if(!groups[g].length)return;
+    html+='<h2 class="'+(g==='over'?'over':'')+'">'+names[g]+'</h2><ul>';
+    groups[g].forEach(function(t){
+      var d=new Date(t.due),tt=time12(d);
+      html+='<li class="task'+(t.done?' done':'')+(g==='over'?' late':'')+'">'
+        +'<div class="when"><span class="t">'+tt.t+'</span><span class="d">'+tt.s+', '+esc(niceDate(d))+'</span></div>'
+        +'<button class="body" data-edit="'+t.id+'" aria-label="Edit '+esc(t.title)+'"><span class="title">'+esc(t.title)+'</span>'
+        +'<span class="meta">'+(t.alarm?'Alarm on':'No alarm')+(isRep(t)?' &middot; &#8635; '+esc(repLabel(t)):'')+'</span></button>'
+        +'<button class="check" data-check="'+t.id+'" aria-label="'+(isRep(t)?'Done for this time':t.done?'Mark as not done':'Mark as done')+'"><span>&#10003;</span></button></li>';
+    });
+    html+='</ul>';
+  });
+  if(!tasks.length)html='<div class="empty"><b>Nothing to do yet</b>Add a task, pick the date and time, and the alarm will ring when it is due.</div>';
+  $('list').innerHTML=html;
+  $('left').textContent=tasks.filter(function(t){return !t.done}).length;
+}
+function tick(){
+  var d=new Date(),tt=time12(d);
+  $('clock').textContent=tt.t+' '+tt.s;
+  $('today').textContent=d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  checkDue();
+}
+function showNotice(kind){
+  var n=$('notice');
+  if(kind==='perm'){n.hidden=false;n.innerHTML='Notifications are turned off, so alarms cannot ring. Open your phone Settings, find this app, and allow notifications. <button id="retryPerm">Try again</button>';
+    $('retryPerm').onclick=function(){nativeReady=null;prepareNative().then(function(ok){if(ok)tasks.forEach(scheduleNative)})}}
+  else if(kind==='web'){n.hidden=false;n.style.borderLeftColor='var(--amber)';n.textContent='In a browser the alarm only rings while this page is open. The Android app rings even when it is closed.'}
+  else n.hidden=true;
+}
+
+/* ---------- ringing ---------- */
+var ringing=null,lastMinute='';
+function checkDue(){
+  var now=Date.now(),changed=false;
+  tasks.forEach(function(t){
+    if(isRep(t)){
+      if(t.snz&&t.snz<=now){var s=t.snz;t.snz=null;changed=true;if(t.alarm&&now-s<90000&&!ringing)ring(t,s)}
+      if(t.due>now)return;
+      var was=t.due;t.due=nextOcc(t.rep,t.due,now,t.days);changed=true;   // move on to the next repeat
+      if(t.alarm&&now-was<90000&&!ringing)ring(t,was);
+      scheduleNative(t);return;
+    }
+    if(t.done||!t.alarm||t.rang||t.due>now)return;
+    t.rang=true;changed=true;
+    if(now-t.due<90000&&!ringing)ring(t,t.due);
+  });
+  var m=hm(new Date());
+  if(changed)persist();
+  if(changed||m!==lastMinute){lastMinute=m;render()}
+}
+function ring(t,when){
+  ringing=t;var d=new Date(when),tt=time12(d);
+  $('ringWhen').textContent='It is '+tt.t+' '+tt.s+'. Time to do this:';
+  $('ringWhat').textContent=t.title;
+  hideBannerForAlarm();
+  $('ringVeil').classList.add('open');startSound();$('ringDone').focus();
+}
+function closeRing(){stopSound();$('ringVeil').classList.remove('open');ringing=null;bringBannerBack()}
+$('ringStop').onclick=closeRing;
+$('ringDone').onclick=function(){var t=ringing;closeRing();if(t&&!isRep(t))setDone(t,true)};   // a repeating task already moved to its next time
+$('ringSnooze').onclick=function(){
+  var t=ringing;closeRing();if(!t)return;
+  if(isRep(t))t.snz=Date.now()+SNOOZE_MIN*60000;   // keep the repeat times, add one extra alarm
+  else{t.due=Date.now()+SNOOZE_MIN*60000;t.rang=false}
+  persist();scheduleNative(t);render();
+};
+
+/* ---------- add / edit ---------- */
+var editing=null;
+function openForm(t){
+  editing=t||null;
+  var d=t?new Date(t.due):new Date(Date.now()+3600000);
+  if(!t){d.setMinutes(0,0,0)}
+  $('formTitle').textContent=t?'Edit task':'New task';
+  $('fTitle').value=t?t.title:'';$('fDate').value=ymd(d);$('fTime').value=hm(d);
+  var r=t&&t.rep?t.rep:'once';
+  $('fRepeat').value=r==='weekly'?'custom':r;
+  pickDays(r==='custom'?t.days:[d.getDay()]);showDays();
+  $('fAlarm').checked=t?t.alarm:true;$('fErr').textContent='';
+  $('fDeleteRow').hidden=!t;$('fSave').textContent=t?'Save changes':'Save task';
+  $('formVeil').classList.add('open');
+  if(!t)setTimeout(function(){$('fTitle').focus()},50);
+}
+function pickDays(list){[].forEach.call($('fDays').children,function(b){b.setAttribute('aria-pressed',list.indexOf(+b.getAttribute('data-day'))>=0?'true':'false')})}
+function chosenDays(){return [].filter.call($('fDays').children,function(b){return b.getAttribute('aria-pressed')==='true'}).map(function(b){return +b.getAttribute('data-day')})}
+function showDays(){   // repeating tasks only need a time: hide the date
+  var r=$('fRepeat').value,once=r==='once';
+  $('fDays').hidden=r!=='custom';$('fDateBox').hidden=!once;$('fWhen').classList.toggle('solo',!once);
+  $('fAlarmHint').textContent=once?'Ring at this date and time':'Ring at this time on the repeat days';
+}
+$('fRepeat').addEventListener('change',showDays);
+$('fDays').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
+  b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')==='true'?'false':'true');$('fErr').textContent=''});
+function closeForm(){$('formVeil').classList.remove('open');editing=null}
+$('addBtn').onclick=function(){openForm()};
+$('fCancel').onclick=closeForm;
+$('formVeil').addEventListener('click',function(e){if(e.target===this)closeForm()});
+$('fSave').onclick=function(){
+  var title=$('fTitle').value.trim(),dv=$('fDate').value,tv=$('fTime').value;
+  if(!title){$('fErr').textContent='Type what you need to do.';$('fTitle').focus();return}
+  var once=$('fRepeat').value==='once';
+  if(!tv||(once&&!dv)){$('fErr').textContent=once?'Pick both a date and a time.':'Pick a time.';return}
+  if(!once)dv=ymd(new Date());   // repeating: start from today
+  var p=dv.split('-'),q=tv.split(':'),due=new Date(+p[0],+p[1]-1,+p[2],+q[0],+q[1],0,0).getTime();
+  if(isNaN(due)){$('fErr').textContent='That date or time is not valid.';return}
+  var alarm=$('fAlarm').checked,rep=$('fRepeat').value,days=rep==='custom'?chosenDays():null;
+  if(rep==='custom'&&!days.length){$('fErr').textContent='Tap at least one day.';return}
+  if(rep!=='once')due=nextOcc(rep,due,Date.now(),days);   // repeating: start from the next time that has not passed
+  else if(alarm&&due<=Date.now()&&!(editing&&editing.due===due)){$('fErr').textContent='That time has already passed. Pick a later time, or turn the alarm off.';return}
+  var t=editing,isNew=!t;
+  if(t){if(t.due!==due)t.rang=due<=Date.now();t.title=title;t.due=due;t.alarm=alarm}
+  else{var n=nextId();t={id:'t'+n,nid:n,title:title,due:due,alarm:alarm,done:false,rang:due<=Date.now()};tasks.push(t)}
+  t.rep=rep;t.days=days;t.snz=null;
+  if(rep!=='once'){t.done=false;t.rang=false;if(!t.ids)t.ids=nextIds(SLOTS)}
+  persist();scheduleNative(t);closeForm();render();
+  if(isNew)afterNewTaskSaved();
+};
+$('fDelete').onclick=function(){
+  var t=editing;if(!t)return;
+  cancelNative(t);tasks=tasks.filter(function(x){return x.id!==t.id});persist();closeForm();render();
+};
+function setDone(t,done){
+  if(isRep(t)){   // a repeating task is never finished: skip to its next time
+    t.due=nextOcc(t.rep,t.due,Math.max(t.due,Date.now()),t.days);t.snz=null;persist();scheduleNative(t);render();return;
+  }
+  t.done=done;persist();
+  if(done)cancelNative(t);else scheduleNative(t);
+  render();
+}
+$('list').addEventListener('click',function(e){
+  var b=e.target.closest('button');if(!b)return;
+  var id=b.getAttribute('data-check')||b.getAttribute('data-edit');
+  var t=tasks.filter(function(x){return x.id===id})[0];if(!t)return;
+  if(b.hasAttribute('data-check'))setDone(t,!t.done);else openForm(t);
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!ringing)closeForm()});
+
+/* ---------- start ---------- */
+if(isNative){prepareNative().then(function(ok){if(ok)tasks.forEach(function(t){if(t.alarm&&!t.done&&t.due>Date.now())scheduleNative(t)})})
+  .then(startAds,startAds)}
+else showNotice('web');
+if($('ver').textContent.indexOf('__')>=0)$('ver').hidden=true;  // version is filled in by the build
+render();tick();setInterval(tick,1000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)tick()});
+})();
+</script>
+</body>
+</html>
