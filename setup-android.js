@@ -1,6 +1,7 @@
 // Runs after "npx cap add android" (GitHub Actions / Codemagic).
 // 1) lets the app ring at the exact minute, 2) copies the alarm sound into the Android app,
-// 3) adds the AdMob App ID to the Android manifest, 4) sets the app version numbers, 5) sets the app icon.
+// 3) adds the AdMob App ID to the Android manifest, 4) sets the app version numbers, 5) sets the app icon,
+// 6) alarm-clock mode, 7) native full-screen alarms (TaskAlarm.java).
 const fs = require('fs');
 const path = require('path');
 
@@ -74,5 +75,60 @@ if (!ln.includes('setAlarmClock(')) {
   fs.writeFileSync(lnFile, ln);
 }
 
-console.log('Android setup done: permissions, AdMob app ID, app icon, alarm sound, alarm-clock mode, version ' +
+// 7) Native alarms (1.3.3): rings like the Clock app — alarm volume, full-screen over the
+//    lock screen, Stop/Snooze, and alarms come back after a restart or an app update.
+//    TaskAlarm.java (uploaded next to this file) holds all of it.
+if (!fs.existsSync('TaskAlarm.java')) throw new Error('TaskAlarm.java is missing: upload it to GitHub');
+const javaDir = path.join('android', 'app', 'src', 'main', 'java', 'com', 'pasuyolabs', 'todoalarm');
+fs.mkdirSync(javaDir, { recursive: true });
+fs.copyFileSync('TaskAlarm.java', path.join(javaDir, 'TaskAlarm.java'));
+fs.writeFileSync(path.join(javaDir, 'MainActivity.java'), [
+  'package com.pasuyolabs.todoalarm;',
+  '',
+  'import android.os.Bundle;',
+  'import com.getcapacitor.BridgeActivity;',
+  '',
+  'public class MainActivity extends BridgeActivity {',
+  '    @Override',
+  '    protected void onCreate(Bundle savedInstanceState) {',
+  '        registerPlugin(TaskAlarm.JsPlugin.class);',
+  '        super.onCreate(savedInstanceState);',
+  '    }',
+  '}',
+  ''
+].join('\n'));
+
+let mx = fs.readFileSync(manifest, 'utf8');
+const alarmPerms = [
+  'android.permission.WAKE_LOCK',
+  'android.permission.RECEIVE_BOOT_COMPLETED',
+  'android.permission.USE_FULL_SCREEN_INTENT',
+  'android.permission.POST_NOTIFICATIONS'
+].filter(p => !mx.includes('"' + p + '"'))
+ .map(p => '<uses-permission android:name="' + p + '" />');
+if (alarmPerms.length) mx = mx.replace('</manifest>', '    ' + alarmPerms.join('\n    ') + '\n</manifest>');
+if (!mx.includes('TaskAlarm$Fire')) {
+  const parts = [
+    '<activity android:name=".TaskAlarm$Ring" android:exported="false" android:showWhenLocked="true"',
+    '            android:turnScreenOn="true" android:launchMode="singleTop" android:taskAffinity=""',
+    '            android:excludeFromRecents="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />',
+    '        <receiver android:name=".TaskAlarm$Fire" android:exported="false" />',
+    '        <receiver android:name=".TaskAlarm$Buttons" android:exported="false" />',
+    '        <receiver android:name=".TaskAlarm$Boot" android:exported="true">',
+    '            <intent-filter>',
+    '                <action android:name="android.intent.action.BOOT_COMPLETED" />',
+    '                <action android:name="android.intent.action.QUICKBOOT_POWERON" />',
+    '                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />',
+    '                <action android:name="android.intent.action.TIME_SET" />',
+    '                <action android:name="android.intent.action.TIMEZONE_CHANGED" />',
+    '                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />',
+    '            </intent-filter>',
+    '        </receiver>'
+  ];
+  if (!mx.includes('</application>')) throw new Error('Could not find </application> in the manifest');
+  mx = mx.replace('</application>', '    ' + parts.join('\n') + '\n    </application>');
+}
+fs.writeFileSync(manifest, mx);
+
+console.log('Android setup done: permissions, AdMob app ID, app icon, alarm sound, alarm-clock mode, native alarms, version ' +
   versionName + ' (code ' + versionCode + ').');
